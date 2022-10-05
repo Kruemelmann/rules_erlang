@@ -1,0 +1,90 @@
+load("@rules_erlang//:erlang_bytecode.bzl", "erlang_bytecode")
+load("@rules_erlang//:app_file.bzl", "app_file")
+load("@rules_erlang//:erlang_app_info.bzl", "erlang_app_info")
+load("@rules_erlang//:untar.bzl", "untar")
+
+untar(
+    name = "contents",
+    outs = [
+        "LICENSE",
+        "LICENSE-APACHE2",
+        "LICENSE-MPL-RabbitMQ",
+        "README.md",
+        "rebar.config",
+        "rebar.lock",
+        "src/aten.app.src",
+        "src/aten.erl",
+        "src/aten_app.erl",
+        "src/aten_detect.erl",
+        "src/aten_detector.erl",
+        "src/aten_emitter.erl",
+        "src/aten_sink.erl",
+        "src/aten_sup.erl",
+    ],
+    archive = "contents.tar.gz",
+)
+
+erlang_bytecode(
+    name = "beam_files",
+    srcs = [
+        "src/aten.erl",
+        "src/aten_app.erl",
+        "src/aten_detect.erl",
+        "src/aten_detector.erl",
+        "src/aten_emitter.erl",
+        "src/aten_sink.erl",
+        "src/aten_sup.erl",
+    ],
+    hdrs = [],
+    dest = "ebin",
+    erlc_opts = select({
+        "@rules_erlang//:debug_build": [
+            "+debug_info",
+        ],
+        "//conditions:default": [
+            "+deterministic",
+            "+debug_info",
+        ],
+    }),
+)
+
+app_file(
+    name = "app_file",
+    app_description = "Erlang node failure detector",
+    app_name = "aten",
+    app_src = ["src/aten.app.src"],
+    app_version = "0.5.8",
+    dest = "ebin",
+    modules = [":beam_files"],
+    stamp = 0,
+)
+
+erlang_app_info(
+    name = "aten",
+    srcs = [
+        "src/aten.app.src",
+        "src/aten.erl",
+        "src/aten_app.erl",
+        "src/aten_detect.erl",
+        "src/aten_detector.erl",
+        "src/aten_emitter.erl",
+        "src/aten_sink.erl",
+        "src/aten_sup.erl",
+    ],
+    hdrs = [],
+    app = ":app_file",
+    app_name = "aten",
+    beam = [":beam_files"],
+    license_files = [
+        "LICENSE",
+        "LICENSE-APACHE2",
+        "LICENSE-MPL-RabbitMQ",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "erlang_app",
+    actual = ":aten",
+    visibility = ["//visibility:public"],
+)
