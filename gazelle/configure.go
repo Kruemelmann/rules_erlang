@@ -2,6 +2,7 @@ package erlang
 
 import (
 	"flag"
+	"fmt"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/rule"
 )
@@ -19,5 +20,5 @@ func (erlang *Configurer) KnownDirectives() []string {
 }
 
 func (erlang *Configurer) Configure(c *config.Config, rel string, f *rule.File) {
-	return
+	fmt.Println("Configure:", rel, f.Path)
 }

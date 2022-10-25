@@ -1,6 +1,8 @@
 package erlang
 
 import (
+	"fmt"
+
 	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 
@@ -12,6 +14,7 @@ const (
 )
 
 func (*erlangLang) Kinds() map[string]rule.KindInfo {
+	fmt.Println("Kinds")
 	return erlangKinds
 }
 
@@ -87,6 +90,7 @@ var erlangKinds = map[string]rule.KindInfo{
 }
 
 func (erlang *erlangLang) Loads() []rule.LoadInfo {
+	fmt.Println("Loads")
 	return erlangLoads
 }
 

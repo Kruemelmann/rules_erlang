@@ -1,6 +1,7 @@
 package erlang
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -50,6 +51,7 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	// The question is what to do with hex? They are nested archives, so to make them
 	// bazel_dep's, we need a rule that unpacks the inner archive. That might be okay. It would
 	// make the BUILD file relatively easy to generate.
+	fmt.Println("GenerateRules:", args.File.Path)
 
 	// Firstly, if this is a hex tar, then it should have
 	// VERSION, CHECKSUM, metadata.config & contents.tar.gz
@@ -57,6 +59,8 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	// If so, we can parse the metadata.config and write an
 	// untar rule
 	if containsAll(args.RegularFiles, hexPmFiles) {
+		fmt.Println("    Hex.pm archive detected")
+
 		parser := newHexMetadataParser(args.Config.RepoRoot, args.Rel)
 
 		var result language.GenerateResult
@@ -66,6 +70,8 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 		if err != nil {
 			log.Fatalf("ERROR: %v\n", err)
 		}
+
+		fmt.Println("    hexMetadata:", hexMetadata)
 
 		untar := rule.NewRule("untar", "contents")
 		untar.SetAttr("archive", hexContentsArchiveFilename)

@@ -1,6 +1,8 @@
 package erlang
 
 import (
+	"fmt"
+
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/label"
 	"github.com/bazelbuild/bazel-gazelle/repo"
@@ -13,6 +15,7 @@ const languageName = "erlang"
 type Resolver struct{}
 
 func (erlang *Resolver) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolve.ImportSpec {
+	fmt.Println("Imports:", f.Path)
 	return nil
 }
 
