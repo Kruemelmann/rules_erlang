@@ -206,3 +206,17 @@ jobs:
         if [[ "${{ steps.before.outputs.otp }}" == "${{ steps.after.outputs.otp }}" ]]; then
           echo "Fail"
         fi
+  test-gazelle-extension:
+    runs-on: ubuntu-latest
+    steps:
+    - name: CHECKOUT
+      uses: actions/checkout@v2
+    - name: CONFIGURE ERLANG
+      uses: erlef/setup-beam@v1
+      with:
+        otp-version: 25
+    - name: TEST GAZELLE PACKAGE
+      run: |
+        bazel test //gazelle:all \
+          --noexperimental_enable_bzlmod \
+          --color=yes
