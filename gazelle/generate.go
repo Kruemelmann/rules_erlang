@@ -1,8 +1,14 @@
 package erlang
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/config"
@@ -10,11 +16,12 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/rule"
 	"github.com/emirpasic/gods/sets/treeset"
 	godsutils "github.com/emirpasic/gods/utils"
+	"golang.org/x/exp/slices"
 )
 
 const (
 	hexContentsArchiveFilename = "contents.tar.gz"
-	hexMetadataFilename = "metadata.config"
+	hexMetadataFilename        = "metadata.config"
 )
 
 var (
@@ -26,18 +33,83 @@ var (
 	}
 )
 
-func containsAll(s []string, elements []string) bool {
-	sAsMap := make(map[string]string, len(s))
-	for _, e := range s {
-		sAsMap[e] = e
-	}
+const (
+	rebarConfigFilename = "rebar.config"
+)
 
+func containsAll(s []string, elements []string) bool {
 	for _, element := range elements {
-		if _, exists := sAsMap[element]; ! exists {
+		if !slices.Contains(s, element) {
 			return false
 		}
 	}
 	return true
+}
+
+func extractTarGz(archive string, dest string) error {
+	fmt.Println("extractTarGz", archive, dest)
+
+	reader, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	uncompressedStream, err := gzip.NewReader(reader)
+	if err != nil {
+		return err
+	}
+	defer uncompressedStream.Close()
+
+	tarReader := tar.NewReader(uncompressedStream)
+	var header *tar.Header
+	for header, err = tarReader.Next(); err == nil; header, err = tarReader.Next() {
+		// fmt.Println("extracting", header.Name)
+		destPath := filepath.Join(dest, header.Name)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(destPath, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			destDir := filepath.Dir(destPath)
+			if err := os.MkdirAll(destDir, 0755); err != nil {
+				return err
+			}
+
+			outFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				outFile.Close()
+				return err
+			}
+			if err := outFile.Close(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("extractTarGz: uknown type: %b in %s", header.Typeflag, header.Name)
+		}
+	}
+	if err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func erlcOptsWithSelect(debugOpts []string) rule.SelectStringListValue {
+	var defaultOpts []string
+	if slices.Contains(debugOpts, "+deterministic") {
+		defaultOpts = debugOpts
+	} else {
+		defaultOpts = append(debugOpts, "+deterministic")
+	}
+	return rule.SelectStringListValue{
+		"@rules_erlang//:debug_build": debugOpts,
+		"//conditions:default":        defaultOpts,
+	}
 }
 
 func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
@@ -53,6 +125,21 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	// make the BUILD file relatively easy to generate.
 	fmt.Println("GenerateRules:", args.File.Path)
 
+	var result language.GenerateResult
+	result.Gen = make([]*rule.Rule, 0)
+
+	var name string
+	var description string
+	var version string
+
+	var srcs *treeset.Set
+	var privateHdrs *treeset.Set
+	var publicHdrs *treeset.Set
+	var appSrc *treeset.Set
+	var licenseFiles *treeset.Set
+
+	erlcOpts := []string{"+debug_info"}
+
 	// Firstly, if this is a hex tar, then it should have
 	// VERSION, CHECKSUM, metadata.config & contents.tar.gz
 	// files.
@@ -61,17 +148,18 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	if containsAll(args.RegularFiles, hexPmFiles) {
 		fmt.Println("    Hex.pm archive detected")
 
-		parser := newHexMetadataParser(args.Config.RepoRoot, args.Rel)
+		parser := newtermParser(args.Config.RepoRoot, args.Rel)
 
-		var result language.GenerateResult
-		result.Gen = make([]*rule.Rule, 0)
-
-		hexMetadata, err := parser.parse(hexMetadataFilename)
+		hexMetadata, err := parser.parseHexMetadata(hexMetadataFilename)
 		if err != nil {
 			log.Fatalf("ERROR: %v\n", err)
 		}
 
 		fmt.Println("    hexMetadata:", hexMetadata)
+
+		name = hexMetadata.Name
+		description = hexMetadata.Description
+		version = hexMetadata.Version
 
 		untar := rule.NewRule("untar", "contents")
 		untar.SetAttr("archive", hexContentsArchiveFilename)
@@ -80,72 +168,100 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 		result.Gen = append(result.Gen, untar)
 		result.Imports = append(result.Imports, untar.PrivateAttr(config.GazelleImportsKey))
 
-		srcs := treeset.NewWith(godsutils.StringComparator)
-		hdrs := treeset.NewWith(godsutils.StringComparator)
-		app_src := treeset.NewWith(godsutils.StringComparator)
-		all_srcs := treeset.NewWith(godsutils.StringComparator)
-		license_files := treeset.NewWith(godsutils.StringComparator)
+		srcs = treeset.NewWith(godsutils.StringComparator)
+		privateHdrs = treeset.NewWith(godsutils.StringComparator)
+		publicHdrs = treeset.NewWith(godsutils.StringComparator)
+		appSrc = treeset.NewWith(godsutils.StringComparator)
+		licenseFiles = treeset.NewWith(godsutils.StringComparator)
 
 		for _, f := range hexMetadata.Files {
-			if strings.HasPrefix(f, "src/") && strings.HasSuffix(f, ".erl") {
-				srcs.Add(f)
-				all_srcs.Add(f)
-			} else if strings.HasPrefix(f, "src/") && strings.HasSuffix(f, ".app.src") {
-				app_src.Add(f)
-				all_srcs.Add(f)
-			} else if strings.HasPrefix(f, "include/") && strings.HasSuffix(f, ".hrl") {
-				hdrs.Add(f)
-				all_srcs.Add(f)
+			if strings.HasPrefix(f, "src/") {
+				if strings.HasSuffix(f, ".erl") {
+					srcs.Add(f)
+				} else if strings.HasSuffix(f, ".hrl") {
+					privateHdrs.Add(f)
+				} else if strings.HasSuffix(f, ".app.src") {
+					appSrc.Add(f)
+				}
+			} else if strings.HasPrefix(f, "include/") {
+				if strings.HasSuffix(f, ".hrl") {
+					publicHdrs.Add(f)
+				}
 			} else if strings.HasPrefix(f, "LICENSE") {
-				license_files.Add(f)
+				licenseFiles.Add(f)
 			}
 		}
 
-		erlang_bytecode := rule.NewRule("erlang_bytecode", "beam_files")
-		erlang_bytecode.SetAttr("srcs", srcs.Values())
-		erlang_bytecode.SetAttr("hdrs", hdrs.Values())
-		erlang_bytecode.SetAttr("dest", "ebin")
-		erlang_bytecode.SetAttr("erlc_opts", rule.SelectStringListValue{
-			"@rules_erlang//:debug_build": []string{"+debug_info"},
-			"//conditions:default": []string{"+deterministic", "+debug_info"},
-		})
+		// extract to a temporary directory
+		extractedContentsDir, err := ioutil.TempDir("", hexMetadata.Name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// defer os.RemoveAll(extractedContentsDir)
+		fmt.Println("    tempDir:", extractedContentsDir)
 
-		result.Gen = append(result.Gen, erlang_bytecode)
-		result.Imports = append(result.Imports, erlang_bytecode.PrivateAttr(config.GazelleImportsKey))
+		hexContentsArchivePath := filepath.Join(args.Config.RepoRoot, args.Rel, hexContentsArchiveFilename)
+		fmt.Println("    hexContentsArchivePath:", hexContentsArchivePath)
+		err = extractTarGz(hexContentsArchivePath, extractedContentsDir)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-		app_file := rule.NewRule("app_file", "app_file")
-		app_file.SetAttr("app_description", hexMetadata.Description)
-		app_file.SetAttr("app_name", hexMetadata.App)
-		app_file.SetAttr("app_src", app_src.Values())
-		app_file.SetAttr("app_version", hexMetadata.Version)
-		app_file.SetAttr("dest", "ebin")
-		app_file.SetAttr("modules", []string{":" + erlang_bytecode.Name()})
-		app_file.SetAttr("stamp", 0)
+		if slices.Contains(hexMetadata.BuildTools, "rebar3") {
+			fmt.Println("    rebar3 detected")
 
-		result.Gen = append(result.Gen, app_file)
-		result.Imports = append(result.Imports, app_file.PrivateAttr(config.GazelleImportsKey))
+			rebarConfigPath := filepath.Join(extractedContentsDir, rebarConfigFilename)
+			rebarConfig, err := parser.parseRebarConfig(rebarConfigPath)
+			if err != nil {
+				log.Fatalf("ERROR: %v\n", err)
+			}
 
-		erlang_app_info := rule.NewRule("erlang_app_info", hexMetadata.App)
-		erlang_app_info.SetAttr("srcs", all_srcs.Values())
-		erlang_app_info.SetAttr("hdrs", hdrs.Values())
-		erlang_app_info.SetAttr("app", ":" + app_file.Name())
-		erlang_app_info.SetAttr("app_name", hexMetadata.App)
-		erlang_app_info.SetAttr("beam", []string{":" + erlang_bytecode.Name()})
-		erlang_app_info.SetAttr("license_files", license_files.Values())
-		erlang_app_info.SetAttr("visibility", []string{"//visibility:public"})
-
-		result.Gen = append(result.Gen, erlang_app_info)
-		result.Imports = append(result.Imports, erlang_app_info.PrivateAttr(config.GazelleImportsKey))
-
-		alias := rule.NewRule("alias", "erlang_app")
-		alias.SetAttr("actual", ":" + erlang_app_info.Name())
-		alias.SetAttr("visibility", []string{"//visibility:public"})
-
-		result.Gen = append(result.Gen, alias)
-		result.Imports = append(result.Imports, alias.PrivateAttr(config.GazelleImportsKey))
-
-		return result
+			erlcOpts = make([]string, len(rebarConfig.ErlcOpts))
+			for i, o := range rebarConfig.ErlcOpts {
+				erlcOpts[i] = "+" + o
+			}
+		}
 	}
 
-	return language.GenerateResult{}
+	erlang_bytecode := rule.NewRule("erlang_bytecode", "beam_files")
+	erlang_bytecode.SetAttr("srcs", srcs.Values())
+	erlang_bytecode.SetAttr("hdrs", privateHdrs.Union(publicHdrs).Values())
+	erlang_bytecode.SetAttr("dest", "ebin")
+	erlang_bytecode.SetAttr("erlc_opts", erlcOptsWithSelect(erlcOpts))
+
+	result.Gen = append(result.Gen, erlang_bytecode)
+	result.Imports = append(result.Imports, erlang_bytecode.PrivateAttr(config.GazelleImportsKey))
+
+	app_file := rule.NewRule("app_file", "app_file")
+	app_file.SetAttr("app_description", description)
+	app_file.SetAttr("app_name", name)
+	app_file.SetAttr("app_src", appSrc.Values())
+	app_file.SetAttr("app_version", version)
+	app_file.SetAttr("dest", "ebin")
+	app_file.SetAttr("modules", []string{":" + erlang_bytecode.Name()})
+	app_file.SetAttr("stamp", 0)
+
+	result.Gen = append(result.Gen, app_file)
+	result.Imports = append(result.Imports, app_file.PrivateAttr(config.GazelleImportsKey))
+
+	erlang_app_info := rule.NewRule("erlang_app_info", name)
+	erlang_app_info.SetAttr("srcs", srcs.Union(privateHdrs).Union(publicHdrs).Union(appSrc).Values())
+	erlang_app_info.SetAttr("hdrs", publicHdrs.Values())
+	erlang_app_info.SetAttr("app", ":"+app_file.Name())
+	erlang_app_info.SetAttr("app_name", name)
+	erlang_app_info.SetAttr("beam", []string{":" + erlang_bytecode.Name()})
+	erlang_app_info.SetAttr("license_files", licenseFiles.Values())
+	erlang_app_info.SetAttr("visibility", []string{"//visibility:public"})
+
+	result.Gen = append(result.Gen, erlang_app_info)
+	result.Imports = append(result.Imports, erlang_app_info.PrivateAttr(config.GazelleImportsKey))
+
+	alias := rule.NewRule("alias", "erlang_app")
+	alias.SetAttr("actual", ":"+erlang_app_info.Name())
+	alias.SetAttr("visibility", []string{"//visibility:public"})
+
+	result.Gen = append(result.Gen, alias)
+	result.Imports = append(result.Imports, alias.PrivateAttr(config.GazelleImportsKey))
+
+	return result
 }

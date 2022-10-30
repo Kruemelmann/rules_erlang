@@ -7,7 +7,7 @@ go_library(
         "configure.go",
         "fix.go",
         "generate.go",
-        "hex_metadata.go",
+        "term_to_json.go",
         "kinds.go",
         "language.go",
         "resolve.go",
@@ -22,15 +22,17 @@ go_library(
         "@bazel_gazelle//resolve:go_default_library",
         "@bazel_gazelle//rule:go_default_library",
         "@com_github_bazelbuild_buildtools//build:go_default_library",
+        "@com_github_emirpasic_gods//lists/singlylinkedlist",
         "@com_github_emirpasic_gods//sets/treeset",
         "@com_github_emirpasic_gods//utils",
+        "@org_golang_x_exp//slices",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
 
 sh_binary(
-    name = "hex_metadata_to_json",
-    srcs = ["hex_metadata_to_json.sh"],
+    name = "term_to_json",
+    srcs = ["term_to_json.sh"],
     visibility = ["//visibility:public"],
 )
 
@@ -39,7 +41,7 @@ go_test(
     srcs = ["erlang_test.go"],
     data = [
         ":gazelle_erlang_binary",
-        ":hex_metadata_to_json",
+        ":term_to_json",
         # ":parse",
         # ":std_modules",
     ] + glob(["testdata/**"]),

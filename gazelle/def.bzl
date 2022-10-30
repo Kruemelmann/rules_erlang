@@ -2,5 +2,5 @@
 """
 
 GAZELLE_ERLANG_RUNTIME_DEPS = [
-    "@rules_erlang//gazelle:hex_metadata_to_json",
+    "@rules_erlang//gazelle:term_to_json",
 ]

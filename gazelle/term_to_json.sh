@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -sname hex_metadata_to_json -nocookie
+%%! -sname term_to_json -nocookie
 -mode(compile).
 
 -export([main/1]).
@@ -27,25 +27,35 @@ parse_json_string(Line) ->
             end
     end.
 
-parse(MetadataFile) ->
-    {ok, Metadata} = file:consult(MetadataFile),
-
-    Map = maps:map(
+deep_mapify(List) ->
+    maps:map(
         fun
             (_, [{_, _} | _] = V) ->
-                proplists:to_map(V);
+                deep_mapify(V);
             (_, V) ->
                 V
         end,
-        proplists:to_map(Metadata)),
+        proplists:to_map(List)).
 
+parse(MetadataFile) ->
+    {ok, Metadata} = file:consult(MetadataFile),
+    Map = deep_mapify(Metadata),
     to_json(Map).
 
 to_json(M) when is_map(M) ->
     Pairs = [to_json(K) ++ ": " ++ to_json(V) || {K, V} <- maps:to_list(M)],
     "{" ++ string:join(Pairs, ",") ++ "}";
-to_json(L) when is_list(L) ->
-    Items = lists:map(fun to_json/1, L),
-    "[" ++ string:join(Items, ",") ++ "]";
 to_json(S) when is_binary(S) ->
-    "\"" ++ binary_to_list(S) ++ "\"".
+    "\"" ++ binary_to_list(S) ++ "\"";
+to_json(A) when is_atom(A) ->
+    "\"" ++ atom_to_list(A) ++ "\"";
+to_json([]) ->
+    "[]";
+to_json(L) when is_list(L) ->
+    case io_lib:printable_list(L) of
+        true ->
+            "\"" ++ L ++ "\"";
+        _ ->
+            Items = lists:map(fun to_json/1, L),
+            "[" ++ string:join(Items, ",") ++ "]"
+    end.
