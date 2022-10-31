@@ -73,7 +73,7 @@ type termParser struct {
 	relPackagePath string
 }
 
-func newtermParser(
+func newTermParser(
 	repoRoot string,
 	relPackagePath string,
 ) *termParser {

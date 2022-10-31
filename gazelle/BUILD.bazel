@@ -10,6 +10,7 @@ go_library(
         "kinds.go",
         "language.go",
         "resolve.go",
+        "tar_gz.go",
         "term_to_json.go",
     ],
     importpath = "github.com/rabbitmq/rules_erlang/gazelle",

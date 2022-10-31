@@ -1,13 +1,9 @@
 package erlang
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -52,59 +48,6 @@ func containsAll(s []string, elements []string) bool {
 		}
 	}
 	return true
-}
-
-func extractTarGz(archive string, dest string) error {
-	fmt.Println("extractTarGz", archive, dest)
-
-	reader, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	uncompressedStream, err := gzip.NewReader(reader)
-	if err != nil {
-		return err
-	}
-	defer uncompressedStream.Close()
-
-	tarReader := tar.NewReader(uncompressedStream)
-	var header *tar.Header
-	for header, err = tarReader.Next(); err == nil; header, err = tarReader.Next() {
-		// fmt.Println("extracting", header.Name)
-		destPath := filepath.Join(dest, header.Name)
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(destPath, 0755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			destDir := filepath.Dir(destPath)
-			if err := os.MkdirAll(destDir, 0755); err != nil {
-				return err
-			}
-
-			outFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
-			if err != nil {
-				return err
-			}
-
-			if _, err := io.Copy(outFile, tarReader); err != nil {
-				outFile.Close()
-				return err
-			}
-			if err := outFile.Close(); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("extractTarGz: uknown type: %b in %s", header.Typeflag, header.Name)
-		}
-	}
-	if err != io.EOF {
-		return err
-	}
-	return nil
 }
 
 func erlcOptsWithSelect(debugOpts []string) rule.SelectStringListValue {
@@ -156,7 +99,7 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	if containsAll(args.RegularFiles, hexPmFiles) {
 		fmt.Println("    Hex.pm archive detected")
 
-		parser := newtermParser(args.Config.RepoRoot, args.Rel)
+		parser := newTermParser(args.Config.RepoRoot, args.Rel)
 
 		hexMetadata, err := parser.parseHexMetadata(hexMetadataFilename)
 		if err != nil {
@@ -210,7 +153,7 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 
 		hexContentsArchivePath := filepath.Join(args.Config.RepoRoot, args.Rel, hexContentsArchiveFilename)
 		fmt.Println("    hexContentsArchivePath:", hexContentsArchivePath)
-		err = extractTarGz(hexContentsArchivePath, extractedContentsDir)
+		err = ExtractTarGz(hexContentsArchivePath, extractedContentsDir)
 		if err != nil {
 			log.Fatal(err)
 		}
