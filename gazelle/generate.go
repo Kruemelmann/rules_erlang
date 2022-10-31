@@ -16,7 +16,6 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/rule"
 	"github.com/emirpasic/gods/sets/treeset"
 	godsutils "github.com/emirpasic/gods/utils"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -37,9 +36,18 @@ const (
 	rebarConfigFilename = "rebar.config"
 )
 
+func contains[T comparable](s []T, e T) bool {
+    for _, v := range s {
+        if v == e {
+            return true
+        }
+    }
+    return false
+}
+
 func containsAll(s []string, elements []string) bool {
 	for _, element := range elements {
-		if !slices.Contains(s, element) {
+		if !contains(s, element) {
 			return false
 		}
 	}
@@ -101,7 +109,7 @@ func extractTarGz(archive string, dest string) error {
 
 func erlcOptsWithSelect(debugOpts []string) rule.SelectStringListValue {
 	var defaultOpts []string
-	if slices.Contains(debugOpts, "+deterministic") {
+	if contains(debugOpts, "+deterministic") {
 		defaultOpts = debugOpts
 	} else {
 		defaultOpts = append(debugOpts, "+deterministic")
@@ -207,7 +215,7 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 			log.Fatal(err)
 		}
 
-		if slices.Contains(hexMetadata.BuildTools, "rebar3") {
+		if contains(hexMetadata.BuildTools, "rebar3") {
 			fmt.Println("    rebar3 detected")
 
 			rebarConfigPath := filepath.Join(extractedContentsDir, rebarConfigFilename)

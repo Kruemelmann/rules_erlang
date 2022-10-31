@@ -84,7 +84,6 @@ load(
     "internal_erlang_from_github_release",
     "rules_erlang_dependencies",
 )
-
 load("@rules_erlang//gazelle:deps.bzl", "gazelle_deps")
 
 gazelle_deps()
