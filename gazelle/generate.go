@@ -74,7 +74,11 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 	// The question is what to do with hex? They are nested archives, so to make them
 	// bazel_dep's, we need a rule that unpacks the inner archive. That might be okay. It would
 	// make the BUILD file relatively easy to generate.
-	fmt.Println("GenerateRules:", args.File.Path)
+	if args.File != nil {
+		fmt.Println("GenerateRules:", args.Rel, args.File.Path)
+	} else {
+		fmt.Println("GenerateRules:", args.Rel, args.File)
+	}
 
 	var result language.GenerateResult
 	result.Gen = make([]*rule.Rule, 0)

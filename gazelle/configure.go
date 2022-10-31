@@ -20,5 +20,9 @@ func (erlang *Configurer) KnownDirectives() []string {
 }
 
 func (erlang *Configurer) Configure(c *config.Config, rel string, f *rule.File) {
-	fmt.Println("Configure:", rel, f.Path)
+	if f != nil {
+		fmt.Println("Configure:", rel, f.Path)
+	} else {
+		fmt.Println("Configure:", rel, f)
+	}
 }
