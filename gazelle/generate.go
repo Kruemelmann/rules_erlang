@@ -171,8 +171,8 @@ func (erlang *erlangLang) GenerateRules(args language.GenerateArgs) language.Gen
 				log.Fatalf("ERROR: %v\n", err)
 			}
 
-			erlcOpts = make([]string, len(rebarConfig.ErlcOpts))
-			for i, o := range rebarConfig.ErlcOpts {
+			erlcOpts = make([]string, len(rebarConfig.ErlOpts))
+			for i, o := range rebarConfig.ErlOpts {
 				erlcOpts[i] = "+" + o
 			}
 		}

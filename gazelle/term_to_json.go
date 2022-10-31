@@ -147,5 +147,5 @@ func (p *termParser) parseRebarConfig(configFilePath string) (*rebarConfig, erro
 
 type rebarConfig struct {
 	// Deps []string `json:"deps"`
-	ErlcOpts []string `json:"erl_opts"`
+	ErlOpts []string `json:"erl_opts"`
 }
